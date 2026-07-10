@@ -1,5 +1,5 @@
 ﻿
-# Muntaha's Capstone project
+# Muntaha's flyrank internship project
 
 > One-sentence description of what this project does and who it is for.
 
