@@ -53,7 +53,7 @@
   font-size: 0.875rem;
 }
 
-button {
+.profile-form button {
   width: 100%;
   padding: 0.75rem;
   background: #4a90e2;
@@ -66,11 +66,11 @@ button {
   transition: background 0.2s, opacity 0.2s;
 }
 
-button:hover:not(:disabled) {
+.profile-form button:hover:not(:disabled) {
   background: #357abd;
 }
 
-button:disabled {
+.profile-form button:disabled {
   background: #ccc;
   cursor: not-allowed;
   opacity: 0.7;

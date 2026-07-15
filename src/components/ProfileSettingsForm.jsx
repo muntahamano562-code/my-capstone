@@ -1,32 +1,7 @@
 import { useState, useMemo } from 'react';
-import './ProfileSettingsForm.css';
+import "./ProfileSettingsForm.css";
+import TextField from './TextField';
 import { validateProfile } from '../utils/validateProfile';
-
-function TextField({ id, label, type = 'text', name, value, onChange, onBlur, error, autoComplete }) {
-  const hasError = Boolean(error);
-
-  return (
-    <div className="form-group">
-      <label htmlFor={id}>{label}</label>
-      <input
-        type={type}
-        id={id}
-        name={name}
-        autoComplete={autoComplete}
-        value={value}
-        onChange={onChange}
-        onBlur={onBlur}
-        aria-invalid={hasError ? 'true' : 'false'}
-        aria-describedby={hasError ? `${id}-error` : undefined}
-      />
-      {hasError && (
-        <span id={`${id}-error`} className="error-message" role="alert">
-          {error}
-        </span>
-      )}
-    </div>
-  );
-}
 
 const ProfileSettingsForm = () => {
   const [formData, setFormData] = useState({
@@ -39,12 +14,14 @@ const ProfileSettingsForm = () => {
     email: false,
     password: false,
   });
+  const [showSuccess, setShowSuccess] = useState(false);
 
   const { errors, isValid } = useMemo(() => validateProfile(formData), [formData]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+    setShowSuccess(false);
   };
 
   const handleBlur = (e) => {
@@ -54,7 +31,8 @@ const ProfileSettingsForm = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    console.log('Form submitted successfully:', formData);
+    console.log('Profile updated successfully');
+    setShowSuccess(true);
     setFormData({ username: '', email: '', password: '' });
     setTouched({ username: false, email: false, password: false });
   };
@@ -62,6 +40,12 @@ const ProfileSettingsForm = () => {
   return (
     <form className="profile-form" onSubmit={handleSubmit} noValidate>
       <h2>Profile Settings</h2>
+
+      {showSuccess && (
+        <div role="status" aria-live="polite">
+          Profile updated successfully.
+        </div>
+      )}
 
       <TextField
         id="username"
