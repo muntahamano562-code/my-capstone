@@ -72,28 +72,11 @@ function AIChat() {
   const [messages, setMessages] = useState(initialMessages);
   const [draftMessage, setDraftMessage] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const userMessageCounter = useRef(0);
   const assistantMessageCounter = useRef(0);
 
-  const buildAssistantResponse = (question) => {
-    const normalized = question.toLowerCase();
-
-    if (normalized.includes('learn')) {
-      return 'Based on your profile, you could strengthen your portfolio with a data-driven project that demonstrates business analysis and stakeholder communication.';
-    }
-
-    if (normalized.includes('skill') || normalized.includes('review')) {
-      return 'Your current strengths look like a good foundation. I would prioritize improving technical communication, stakeholder storytelling, and one hands-on portfolio artifact.';
-    }
-
-    if (normalized.includes('project')) {
-      return 'A strong next project would be a dashboard that turns customer feedback into a clear action plan for a product or operations team.';
-    }
-
-    return 'I recommend starting with a short skills gap review, then choosing one visible project that demonstrates measurable outcomes for your target role.';
-  };
-
-  const sendMessage = (question) => {
+  const sendMessage = async (question) => {
     const trimmedQuestion = question.trim();
 
     if (!trimmedQuestion) {
@@ -108,18 +91,49 @@ function AIChat() {
 
     setMessages((currentMessages) => [...currentMessages, newUserMessage]);
     setDraftMessage('');
+    setErrorMessage('');
     setIsThinking(true);
 
-    window.setTimeout(() => {
-      const response = {
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [...messages, newUserMessage].map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        }),
+      });
+
+      const responsePayload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(responsePayload.error || 'The assistant is unavailable right now.');
+      }
+
+      const assistantMessage = {
         id: `assistant-${assistantMessageCounter.current++}`,
         role: 'assistant',
-        content: buildAssistantResponse(trimmedQuestion),
+        content: responsePayload.message,
       };
 
-      setMessages((currentMessages) => [...currentMessages, response]);
+      setMessages((currentMessages) => [...currentMessages, assistantMessage]);
+    } catch (error) {
+      setErrorMessage(error.message || 'Unable to contact the AI Career Assistant.');
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: `assistant-${assistantMessageCounter.current++}`,
+          role: 'assistant',
+          content: 'I am having trouble reaching the assistant right now. Please try again in a moment.',
+        },
+      ]);
+    } finally {
       setIsThinking(false);
-    }, 450);
+    }
   };
 
   return (
@@ -140,7 +154,7 @@ function AIChat() {
             <ChatMessage key={message.id} message={message} />
           ))}
 
-          {isThinking && (
+          {!errorMessage && isThinking && (
             <article className="chat-message chat-message-assistant chat-message-thinking" aria-label="Assistant is thinking">
               <div className="chat-message__meta">
                 <span className="chat-message__label">Assistant</span>
@@ -149,6 +163,12 @@ function AIChat() {
                 <span aria-label="Thinking">Thinking...</span>
               </div>
             </article>
+          )}
+
+          {errorMessage && (
+            <div className="chat-error" role="alert">
+              {errorMessage}
+            </div>
           )}
 
           {messages.length === 1 && (
