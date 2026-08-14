@@ -1,6 +1,6 @@
 import express from 'express';
-import { generateText } from 'ai';
-import { claudeModel, AI_SYSTEM_PROMPT } from '../config/aiConfig.js';
+import { generateText, streamText } from 'ai';
+import { googleModel, AI_SYSTEM_PROMPT, PROVIDER_API_KEY_ENV } from '../config/aiConfig.js';
 import { generateTextMock } from '../providers/mockProvider.js';
 
 const router = express.Router();
@@ -13,6 +13,7 @@ function writeSSE(res, data) {
     if (typeof res.flush === 'function') res.flush();
   } catch {
     // ignore flush errors
+    void 0;
   }
 }
 
@@ -44,7 +45,8 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'A conversation payload is required.' });
   }
 
-  const useMock = !process.env.ANTHROPIC_API_KEY;
+  const useMock = !process.env[PROVIDER_API_KEY_ENV];
+  console.log('server: /api/chat useMock=', useMock, 'apiKeyPresent=', !!process.env[PROVIDER_API_KEY_ENV]);
 
   // Set SSE headers so the browser can stream
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -53,9 +55,20 @@ router.post('/', async (req, res) => {
   res.flushHeaders && res.flushHeaders();
 
   let closed = false;
+  const abortController = new AbortController();
+
+  let closedLogged = false;
   req.on('close', () => {
     closed = true;
-    console.log('server: client connection closed');
+    try {
+      abortController.abort();
+    } catch (e) {
+      void e;
+    }
+    if (!closedLogged) {
+      console.log('server: client connection closed');
+      closedLogged = true;
+    }
   });
 
   try {
@@ -75,24 +88,61 @@ router.post('/', async (req, res) => {
       return res.end();
     }
 
-    // Production: non-mock path. Attempt to stream if the SDK supports it.
-    // For compatibility, we call generateText and stream the result text as chunks.
-    const response = await generateText({ model: claudeModel, system: AI_SYSTEM_PROMPT, messages });
-    const fullText = response.text || '';
-    const chunks = chunkStringByWords(fullText, 12);
-
+    // Production: non-mock path.
+    // Send SSE meta before calling the provider
     writeSSE(res, { type: 'meta', mock: false });
+    // Development-only debug event for the client (harmless)
+    writeSSE(res, { type: 'debug', msg: 'starting-gemini-stream' });
 
-    console.log('server: starting prod chunk send loop');
-    for (const chunk of chunks) {
-        console.log('server: sending prod chunk ->', JSON.stringify(chunk));
-      writeSSE(res, { type: 'chunk', text: chunk });
-      // small delay to allow progressive rendering client-side
-      await new Promise((r) => setTimeout(r, 80));
+    if (!process.env[PROVIDER_API_KEY_ENV]) {
+      // Shouldn't happen because useMock would be true, but keep safe fallback
+      const response = await generateText({ model: googleModel, system: AI_SYSTEM_PROMPT, messages });
+      const fullText = response.text || '';
+      const chunks = chunkStringByWords(fullText, 12);
+      for (const chunk of chunks) {
+        writeSSE(res, { type: 'chunk', text: chunk });
+        await new Promise((r) => setTimeout(r, 80));
+      }
+      if (!closed) writeSSE(res, { type: 'done' });
+      console.log('server: sent done, ending response');
+      return res.end();
     }
 
-    if (!closed) writeSSE(res, { type: 'done' });
-    return res.end();
+    // Use the explicit `streamText` API and consume the text stream directly.
+    try {
+      console.log('server: calling streamText for request');
+      const streamResult = streamText({
+        model: googleModel,
+        system: AI_SYSTEM_PROMPT,
+        messages,
+        abortSignal: abortController.signal,
+      });
+
+      console.log('server: awaiting textStream for request');
+      for await (const text of streamResult.textStream) {
+        console.log('server: got textStream chunk len=', text ? text.length : 0);
+        if (!text || closed) continue;
+        writeSSE(res, { type: 'chunk', text });
+      }
+
+      if (!closed) writeSSE(res, { type: 'done' });
+      console.log('server: sent done, ending response');
+      return res.end();
+    } catch (err) {
+      // If the request was aborted, end the stream quietly.
+      if (abortController.signal.aborted) {
+        return res.end();
+      }
+      // On any provider/stream error, surface a single SSE error event
+      // and end the response. Do not silently fall back to the mock.
+      console.error('Gemini streaming error:', err);
+      try {
+        if (!closed) writeSSE(res, { type: 'error', message: 'AI generation failed. Please try again.' });
+      } catch (e) {
+        void e;
+      }
+      return res.end();
+    }
   } catch (error) {
     console.error('Chat streaming failed:', error);
     if (!res.headersSent) {
