@@ -1,9 +1,30 @@
-import { streamText } from 'ai';
+import { streamText, stepCountIs } from 'ai';
 import { googleModel, AI_SYSTEM_PROMPT, PROVIDER_API_KEY_ENV } from '../server/config/aiConfig.js';
 import { generateTextMock } from '../server/providers/mockProvider.js';
+import { analyzeGithubProfile } from '../server/tools/githubAnalysis.js';
 
 function writeSSE(res, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function extractErrorMessage(error) {
+  if (error == null) {
+    return 'Unknown error';
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'object' && 'message' in error) {
+    return String(error.message);
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Unknown error';
+  }
 }
 
 function chunkStringByWords(text, maxWordsPerChunk = 6) {
@@ -79,14 +100,78 @@ export default async function handler(req, res) {
       model: googleModel,
       system: AI_SYSTEM_PROMPT,
       messages,
+      tools: {
+        analyzeGithubProfile,
+      },
+      stopWhen: stepCountIs(4),
     });
 
-    for await (const text of result.textStream) {
-      if (text) {
+    // Iterate the full event stream so we can surface both text deltas and the
+    // tool-call lifecycle (input-streaming -> input-available -> output-available
+    // / output-error) to the frontend via SSE for Phase 4 rendering.
+    for await (const part of result.fullStream) {
+      if (part.type === 'text-delta') {
+        if (part.text) {
+          writeSSE(res, { type: 'chunk', text: part.text });
+        }
+        continue;
+      }
+
+      if (part.type === 'tool-input-start') {
         writeSSE(res, {
-          type: 'chunk',
-          text,
+          type: 'tool-input-start',
+          toolName: part.toolName,
+          toolCallId: part.id,
         });
+        continue;
+      }
+
+      if (part.type === 'tool-input-delta') {
+        writeSSE(res, {
+          type: 'tool-input-delta',
+          toolName: part.toolName,
+          toolCallId: part.id,
+          delta: part.delta,
+        });
+        continue;
+      }
+
+      if (part.type === 'tool-call') {
+        writeSSE(res, {
+          type: 'tool-call',
+          toolName: part.toolName,
+          toolCallId: part.toolCallId,
+          input: part.input,
+        });
+        continue;
+      }
+
+      if (part.type === 'tool-result') {
+        writeSSE(res, {
+          type: 'tool-result',
+          toolName: part.toolName,
+          toolCallId: part.toolCallId,
+          output: part.output,
+        });
+        continue;
+      }
+
+      if (part.type === 'tool-error') {
+        writeSSE(res, {
+          type: 'tool-error',
+          toolName: part.toolName,
+          toolCallId: part.toolCallId,
+          error: extractErrorMessage(part.error),
+        });
+        continue;
+      }
+
+      if (part.type === 'error') {
+        writeSSE(res, {
+          type: 'error',
+          message: extractErrorMessage(part.error),
+        });
+        continue;
       }
     }
 

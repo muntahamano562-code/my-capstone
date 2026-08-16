@@ -1,9 +1,12 @@
 import express from 'express';
-import chatRouter from '../server/api/chat.js';
+import chatHandler from '../../api/chat.js';
 
-const app = express();
+const router = express.Router();
 
-app.use(express.json({ limit: '1mb' }));
-app.use('/', chatRouter);
+// Forward all requests to the canonical serverless chat handler so the local
+// Express dev server uses the exact same implementation as the deployment.
+router.use(async (req, res) => {
+  await chatHandler(req, res);
+});
 
-export default app;
+export default router;

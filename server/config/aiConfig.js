@@ -8,7 +8,7 @@ export const PROVIDER_MODEL_ENV = 'GOOGLE_MODEL';
 // Use env `GOOGLE_MODEL` when present; otherwise choose a verified, supported
 // Gemini text-generation model discovered via the account's models list.
 // (Updated to a supported model returned by the models endpoint.)
-const MESSAGE_MODEL = process.env[PROVIDER_MODEL_ENV] || 'gemini-3.7-flash';
+const MESSAGE_MODEL = process.env[PROVIDER_MODEL_ENV] || 'gemini-3.5-flash';
 export const AI_SYSTEM_PROMPT = `You are an AI Career Assistant.
 
 Your task is to provide practical career and learning guidance using profile context when it is available.
