@@ -29,18 +29,12 @@ const LANGUAGE_COLORS = {
 
 const languageColor = (lang) => LANGUAGE_COLORS[lang] || '#94a3b8';
 
-const initialMessages = [
-  {
-    id: 'assistant-welcome',
-    role: 'assistant',
-    content:
-      "Hi, I'm your AI Career Assistant. I can help you plan your next learning step, review your current skills, and suggest practical projects based on your profile.",
-  },
-];
-
-const suggestedPrompts = [
-  'What should I learn next?',
-  'Review my skills',
+// Example prompts used by the first-run empty state. They drive the existing
+// chat flow, so clicking one behaves exactly like typing and sending.
+const EXAMPLE_PROMPTS = [
+  'Analyze the GitHub user torvalds',
+  'Explain what JavaScript closures are',
+  'Review my frontend skills',
   'Suggest a project for me',
 ];
 
@@ -65,17 +59,70 @@ function safeErrorMessage(message) {
   return trimmed;
 }
 
+// Normalize low-level failures (network, HTTP status, stream throw) into a
+// single safe, user-facing shape. Never includes secrets or raw payloads.
+function classifyError(err, status) {
+  if (status === 429) {
+    return {
+      type: 'rate-limit',
+      message: "You're sending requests too quickly. Please wait a moment and try again.",
+    };
+  }
+  if (typeof status === 'number' && status >= 400) {
+    return {
+      type: 'api',
+      message: 'The assistant service returned an error. Please try again.',
+    };
+  }
+  const name = err && err.name;
+  const msg = (err && err.message) || '';
+  if (name === 'TypeError' || /fetch|network|connect|failed to fetch/i.test(msg)) {
+    return {
+      type: 'network',
+      message: "Unable to connect right now. Check your connection and try again.",
+    };
+  }
+  return {
+    type: 'generic',
+    message: safeErrorMessage(msg) || 'Something went wrong while reaching the assistant. Please try again.',
+  };
+}
+
 function ChatMessage({ message }) {
   const isAssistant = message.role === 'assistant';
 
   return (
-    <article className={`chat-message chat-message-${isAssistant ? 'assistant' : 'user'}`} aria-label={isAssistant ? 'Assistant message' : 'User message'}>
+    <article
+      className={`chat-message chat-message-${isAssistant ? 'assistant' : 'user'}`}
+      aria-label={isAssistant ? 'Assistant message' : 'User message'}
+    >
       <div className="chat-message__meta">
         <span className="chat-message__label">{isAssistant ? 'Assistant' : 'You'}</span>
       </div>
       {message.content ? (
         <div className="chat-message__bubble">{message.content}</div>
       ) : null}
+    </article>
+  );
+}
+
+// Polished pending/skeleton state shown while the assistant is preparing its
+// first token. Avoids layout shift and clearly signals "working".
+function PendingSkeleton() {
+  return (
+    <article
+      className="chat-message chat-message-assistant chat-message-pending"
+      aria-label="Assistant is preparing a response"
+      aria-busy="true"
+    >
+      <div className="chat-message__meta">
+        <span className="chat-message__label">Assistant</span>
+      </div>
+      <div className="chat-message__bubble chat-skeleton" aria-hidden="true">
+        <span className="chat-skeleton__line" style={{ width: '92%' }} />
+        <span className="chat-skeleton__line" style={{ width: '78%' }} />
+        <span className="chat-skeleton__line" style={{ width: '55%' }} />
+      </div>
     </article>
   );
 }
@@ -87,6 +134,8 @@ function ChatInput({ value, onChange, onSend, disabled }) {
       onSend();
     }
   };
+
+  const isEmpty = value.trim().length === 0;
 
   return (
     <div className="chat-input-panel">
@@ -108,11 +157,16 @@ function ChatInput({ value, onChange, onSend, disabled }) {
         type="button"
         className="chat-send-button"
         onClick={onSend}
-        disabled={disabled || value.trim().length === 0}
+        disabled={disabled || isEmpty}
         aria-label="Send message"
       >
         Send
       </button>
+      {isEmpty ? (
+        <p className="chat-input-hint" role="status">
+          Type a message to ask your career assistant.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -309,62 +363,137 @@ export function ToolCallCard({ toolCall, onRetry, retrying }) {
   return null;
 }
 
+function ErrorCard({ error, onRetry, retrying }) {
+  if (!error) return null;
+
+  const icon = error.type === 'rate-limit' ? '⏳' : '⚠️';
+  const title =
+    error.type === 'network'
+      ? 'Connection problem'
+      : error.type === 'rate-limit'
+        ? 'Slow down a moment'
+        : 'Response interrupted';
+
+  return (
+    <article
+      className={`chat-error-card chat-error-card--${error.type}`}
+      role="alert"
+      aria-label={title}
+    >
+      <div className="chat-error-card__icon" aria-hidden="true">{icon}</div>
+      <div className="chat-error-card__body">
+        <p className="chat-error-card__title">{title}</p>
+        <p className="chat-error-card__message">{error.message}</p>
+        <button
+          type="button"
+          className="chat-error-card__retry"
+          onClick={onRetry}
+          disabled={retrying}
+          aria-label="Try again"
+        >
+          {retrying ? 'Retrying…' : 'Try again'}
+        </button>
+      </div>
+    </article>
+  );
+}
+
 function AIChat() {
-  const [messages, setMessages] = useState(initialMessages);
+  const [messages, setMessages] = useState([]);
   const [draftMessage, setDraftMessage] = useState('');
   const [isThinking, setIsThinking] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamError, setStreamError] = useState(null); // { type, message, assistantId }
+  const [stopped, setStopped] = useState(false);
+  const [toolCall, setToolCall] = useState(null);
+  const [lastQuestion, setLastQuestion] = useState('');
+
   const userMessageCounter = useRef(0);
   const assistantMessageCounter = useRef(0);
   const abortControllerRef = useRef(null);
   const chatAreaRef = useRef(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [showJump, setShowJump] = useState(false);
-  const [toolCall, setToolCall] = useState(null);
-  const [lastQuestion, setLastQuestion] = useState('');
 
-  const sendMessage = async (question) => {
-    const trimmedQuestion = question.trim();
+  // Refs kept in sync with state so retry handlers read fresh values.
+  const messagesRef = useRef(messages);
+  const streamErrorRef = useRef(streamError);
+  const isStreamingRef = useRef(isStreaming);
 
-    if (!trimmedQuestion) {
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  useEffect(() => {
+    streamErrorRef.current = streamError;
+  }, [streamError]);
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
+  const sendMessage = async (rawQuestion, options = {}) => {
+    const { isRetry = false } = options;
+    const question = (rawQuestion || '').trim();
+
+    // B guard: never send empty/whitespace-only input.
+    if (!question) {
+      return;
+    }
+    // Prevent duplicate simultaneous generations/retries.
+    if (isStreamingRef.current) {
       return;
     }
 
-    const newUserMessage = {
-      id: `user-${userMessageCounter.current++}`,
-      role: 'user',
-      content: trimmedQuestion,
-    };
+    // Build the conversation snapshot to send. On retry we reuse the existing
+    // user message and drop any dangling partial assistant message so the
+    // conversation is never duplicated.
+    let snapshot;
+    if (isRetry) {
+      const failedId = streamErrorRef.current ? streamErrorRef.current.assistantId : null;
+      snapshot = messagesRef.current.filter((m) => m.id !== failedId);
+    } else {
+      const newUserMessage = {
+        id: `user-${userMessageCounter.current++}`,
+        role: 'user',
+        content: question,
+      };
+      snapshot = [...messagesRef.current, newUserMessage];
+      setLastQuestion(question);
+    }
 
-    setMessages((currentMessages) => [...currentMessages, newUserMessage]);
+    setMessages(snapshot);
     setDraftMessage('');
-    setErrorMessage('');
+    setStreamError(null);
+    setStopped(false);
     setToolCall(null);
-    setLastQuestion(trimmedQuestion);
     setIsThinking(true);
     setIsStreaming(true);
-    // Start streaming from the server using Fetch + ReadableStream parsing for SSE-style events
+    isStreamingRef.current = true;
+
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    // track assistant placeholder content for logging and cleanup
     let assistantId = null;
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...messages, newUserMessage].map((m) => ({ role: m.role, content: m.content })) }),
+        body: JSON.stringify({
+          messages: snapshot.map((m) => ({ role: m.role, content: m.content })),
+        }),
         signal: controller.signal,
       });
 
       if (!res.ok) {
         const payload = await res.json().catch(() => ({}));
-        throw new Error(payload.error || 'Assistant returned an error');
+        setStreamError({
+          ...classifyError(new Error(payload.error || 'Request failed'), res.status),
+          assistantId: null,
+        });
+        return;
       }
 
-      // Create a placeholder assistant message that will be updated as chunks arrive
+      // Create a placeholder assistant message that will be updated as chunks arrive.
       assistantId = `assistant-${assistantMessageCounter.current++}`;
       setMessages((current) => [...current, { id: assistantId, role: 'assistant', content: '' }]);
 
@@ -405,7 +534,13 @@ function AIChat() {
               firstChunkArrived = true;
               setIsThinking(false);
             }
-            setMessages((current) => current.map((m) => (m.id === assistantId ? { ...m, content: (m.content || '') + payload.text } : m)));
+            setMessages((current) =>
+              current.map((msg) =>
+                msg.id === assistantId
+                  ? { ...msg, content: (msg.content || '') + payload.text }
+                  : msg,
+              ),
+            );
           } else if (payload.type === 'tool-input-start') {
             setIsThinking(false);
             setToolCall({
@@ -418,7 +553,11 @@ function AIChat() {
               error: null,
             });
           } else if (payload.type === 'tool-input-delta') {
-            setToolCall((prev) => (prev ? { ...prev, partialInput: (prev.partialInput || '') + (payload.delta || '') } : prev));
+            setToolCall((prev) =>
+              prev
+                ? { ...prev, partialInput: (prev.partialInput || '') + (payload.delta || '') }
+                : prev,
+            );
           } else if (payload.type === 'tool-call') {
             setToolCall((prev) => ({
               ...(prev || { toolName: payload.toolName, toolCallId: payload.toolCallId }),
@@ -428,7 +567,11 @@ function AIChat() {
           } else if (payload.type === 'tool-result') {
             setToolCall((prev) => ({ ...(prev || {}), status: 'available', output: payload.output }));
           } else if (payload.type === 'tool-error') {
-            setToolCall((prev) => ({ ...(prev || { toolName: payload.toolName }), status: 'error', error: payload.error }));
+            setToolCall((prev) => ({
+              ...(prev || { toolName: payload.toolName }),
+              status: 'error',
+              error: payload.error,
+            }));
           } else if (payload.type === 'done') {
             setIsStreaming(false);
           } else if (payload.type === 'error') {
@@ -436,26 +579,27 @@ function AIChat() {
           }
         }
       }
-
     } catch (err) {
       if (err.name === 'AbortError') {
-        // user cancelled — do not show an alarming error
-        setErrorMessage('Generation stopped.');
+        // user cancelled — show a calm note, not an alarming error
+        setStopped(true);
+        return;
+      }
+      const classified = classifyError(err, null);
+      // Mid-stream: keep whatever content already arrived, surface a retry card.
+      if (assistantId) {
+        setStreamError({
+          type: 'mid-stream',
+          message: 'Something went wrong while generating this response.',
+          assistantId,
+        });
       } else {
-        setErrorMessage(safeErrorMessage(err.message) || 'Unable to contact assistant.');
-        // if we created a placeholder assistant bubble, replace its content with a friendly message
-        if (assistantId) {
-          setMessages((current) => current.map((m) => (m.id === assistantId ? { ...m, content: 'I am having trouble reaching the assistant right now. Please try again in a moment.' } : m)));
-        } else {
-          setMessages((current) => [
-            ...current,
-            { id: `assistant-${assistantMessageCounter.current++}`, role: 'assistant', content: 'I am having trouble reaching the assistant right now. Please try again in a moment.' },
-          ]);
-        }
+        setStreamError({ ...classified, assistantId: null });
       }
     } finally {
       setIsThinking(false);
       setIsStreaming(false);
+      isStreamingRef.current = false;
       abortControllerRef.current = null;
     }
   };
@@ -485,7 +629,7 @@ function AIChat() {
       // scroll to bottom smoothly when new content arrives
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     }
-  }, [messages, isAtBottom]);
+  }, [messages, isAtBottom, toolCall, streamError]);
 
   const handleStop = () => {
     if (abortControllerRef.current) {
@@ -494,8 +638,8 @@ function AIChat() {
   };
 
   const handleRetry = () => {
-    if (!lastQuestion || isStreaming) return;
-    sendMessage(lastQuestion);
+    if (isStreamingRef.current || !lastQuestion) return;
+    sendMessage(lastQuestion, { isRetry: true });
   };
 
   const jumpToLatest = () => {
@@ -503,6 +647,8 @@ function AIChat() {
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   };
+
+  const showSkeleton = !streamError && isThinking && !toolCall;
 
   return (
     <section className="ai-chat-screen">
@@ -517,48 +663,49 @@ function AIChat() {
       </header>
 
       <section className="ai-chat-panel" aria-label="AI Career Assistant chat">
-        <div ref={chatAreaRef} className="chat-area" aria-live="polite" aria-relevant="additions text">
-          {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
-          ))}
-
-          <ToolCallCard
-            toolCall={toolCall}
-            onRetry={handleRetry}
-            retrying={isStreaming}
-          />
-
-          {!errorMessage && isThinking && (
-            <article className="chat-message chat-message-assistant chat-message-thinking" aria-label="Assistant is thinking">
-              <div className="chat-message__meta">
-                <span className="chat-message__label">Assistant</span>
-              </div>
-              <div className="chat-message__bubble">
-                <span aria-label="Thinking">Thinking...</span>
-              </div>
-            </article>
-          )}
-
-          {errorMessage && (
-            <div className="chat-error" role="alert">
-              {errorMessage}
-            </div>
-          )}
-
-          {messages.length === 1 && (
-            <section className="suggested-prompts" aria-label="Suggested career assistant prompts">
-              <div className="suggested-prompts__header">
-                <span>Suggested prompts</span>
-              </div>
-              <div className="suggested-prompts__list">
-                {suggestedPrompts.map((prompt) => (
-                  <button key={prompt} type="button" className="suggestion-button" onClick={() => sendMessage(prompt)}>
+        <div
+          ref={chatAreaRef}
+          className="chat-area"
+          aria-live="polite"
+          aria-relevant="additions text"
+        >
+          {messages.length === 0 && (
+            <section className="chat-empty-state" aria-label="Welcome to your AI Career Assistant">
+              <h2 className="chat-empty-state__title">What do you want to work on?</h2>
+              <p className="chat-empty-state__subtitle">
+                Ask about your next learning move, analyze a GitHub profile, or get a tailored
+                project suggestion. Try one of these:
+              </p>
+              <div className="chat-empty-state__examples">
+                {EXAMPLE_PROMPTS.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    className="example-prompt-button"
+                    onClick={() => sendMessage(prompt)}
+                  >
                     {prompt}
                   </button>
                 ))}
               </div>
             </section>
           )}
+
+          {messages.map((message) => (
+            <ChatMessage key={message.id} message={message} />
+          ))}
+
+          {showSkeleton && <PendingSkeleton />}
+
+          <ToolCallCard toolCall={toolCall} onRetry={handleRetry} retrying={isStreaming} />
+
+          {stopped && !streamError && (
+            <div className="chat-stopped-note" role="status">
+              Generation stopped.
+            </div>
+          )}
+
+          <ErrorCard error={streamError} onRetry={handleRetry} retrying={isStreaming} />
         </div>
 
         <div className="chat-input-wrap">
@@ -570,12 +717,22 @@ function AIChat() {
           />
           <div className="chat-controls">
             {isStreaming ? (
-              <button type="button" className="chat-stop-button" onClick={handleStop} aria-label="Stop generation">
+              <button
+                type="button"
+                className="chat-stop-button"
+                onClick={handleStop}
+                aria-label="Stop generation"
+              >
                 Stop
               </button>
             ) : null}
             {showJump && (
-              <button type="button" className="chat-jump-button" onClick={jumpToLatest} aria-label="Jump to latest">
+              <button
+                type="button"
+                className="chat-jump-button"
+                onClick={jumpToLatest}
+                aria-label="Jump to latest"
+              >
                 Jump to latest
               </button>
             )}

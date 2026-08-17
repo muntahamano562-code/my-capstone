@@ -202,6 +202,14 @@
   box-sizing: border-box;
 }
 
+.chat-input-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text, #6b6375);
+  line-height: 1.4;
+}
+
 .chat-input:focus {
   outline: none;
   border-color: var(--accent, #aa3bff);
@@ -754,4 +762,263 @@
     width: 48%;
     padding: 0.7rem 0.6rem;
   }
+
+  .chat-empty-state__examples {
+    gap: 0.55rem;
+  }
+
+  .example-prompt-button {
+    flex: 1 1 100%;
+    text-align: left;
+  }
+
+  .chat-error-card__body {
+    align-items: flex-start;
+  }
+}
+
+/* ============ First-run empty / onboarding state ============ */
+.chat-empty-state {
+  padding: 1.4rem 0.25rem 0.5rem;
+  text-align: left;
+}
+
+.chat-empty-state__title {
+  margin: 0 0 0.5rem;
+  font-size: clamp(1.4rem, 3.4vw, 1.9rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  color: var(--text-h, #08060d);
+  font-weight: 700;
+}
+
+.chat-empty-state__subtitle {
+  margin: 0 0 1.1rem;
+  max-width: 56ch;
+  color: var(--text, #6b6375);
+  line-height: 1.55;
+}
+
+.chat-empty-state__examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.example-prompt-button {
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 220px;
+  text-align: left;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 12px;
+  padding: 0.8rem 0.95rem;
+  color: #4c1d95;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+}
+
+.example-prompt-button:hover,
+.example-prompt-button:focus-visible {
+  background: #ede9fe;
+  border-color: #c4b5fd;
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
+.example-prompt-button:active {
+  transform: translateY(1px);
+}
+
+/* ============ Pending / skeleton state ============ */
+.chat-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+}
+
+.chat-skeleton__line {
+  height: 0.7rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #eceef1 25%, #f5f6f8 37%, #eceef1 63%);
+  background-size: 400% 100%;
+  animation: chat-skeleton-shimmer 1.3s ease-in-out infinite;
+}
+
+@keyframes chat-skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* ============ Authored error / retry card ============ */
+.chat-error-card {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  border: 1px solid #fca5a5;
+  background: linear-gradient(180deg, #fef2f2 0%, #ffffff 100%);
+  animation: tool-card-in 0.24s ease-out both;
+}
+
+.chat-error-card--network {
+  border-color: #fcd34d;
+  background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+}
+
+.chat-error-card--rate-limit {
+  border-color: #93c5fd;
+  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+}
+
+.chat-error-card__icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #fee2e2;
+  font-size: 1rem;
+}
+
+.chat-error-card--network .chat-error-card__icon { background: #fef3c7; }
+.chat-error-card--rate-limit .chat-error-card__icon { background: #dbeafe; }
+
+.chat-error-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.chat-error-card__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #7f1d1d;
+  letter-spacing: 0.01em;
+}
+
+.chat-error-card--network .chat-error-card__title { color: #92400e; }
+.chat-error-card--rate-limit .chat-error-card__title { color: #1e40af; }
+
+.chat-error-card__message {
+  margin: 0 0 0.3rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #334155;
+  overflow-wrap: anywhere;
+}
+
+.chat-error-card__retry {
+  appearance: none;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #b91c1c;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.55rem 1.05rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.chat-error-card--network .chat-error-card__retry { background: #b45309; }
+.chat-error-card--rate-limit .chat-error-card__retry { background: #1d4ed8; }
+
+.chat-error-card__retry:hover:not(:disabled),
+.chat-error-card__retry:focus-visible:not(:disabled) {
+  filter: brightness(0.92);
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.chat-error-card__retry:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* ============ Stopped note ============ */
+.chat-stopped-note {
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 10px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* ============ App-level error boundary ============ */
+.app-error-boundary {
+  max-width: 560px;
+  margin: 2rem auto;
+  padding: 2rem 1.5rem;
+  border-radius: 16px;
+  border: 1px solid #fca5a5;
+  background: linear-gradient(180deg, #fef2f2 0%, #ffffff 100%);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.app-error-boundary__icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.app-error-boundary__title {
+  margin: 0.6rem 0 0.4rem;
+  font-size: 1.3rem;
+  color: #7f1d1d;
+}
+
+.app-error-boundary__message {
+  margin: 0 0 1.1rem;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.app-error-boundary__retry {
+  appearance: none;
+  background: #b91c1c;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.6rem 1.2rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.app-error-boundary__retry:hover:not(:disabled),
+.app-error-boundary__retry:focus-visible:not(:disabled) {
+  background: #991b1b;
+  outline: 2px solid #fca5a5;
+  outline-offset: 2px;
+}
+
+/* ============ Word-wrap guards for long content ============ */
+.tool-card__username,
+.tool-card__input-value,
+.tool-error__message,
+.tool-summary,
+.chat-error-card__message,
+.example-prompt-button {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
