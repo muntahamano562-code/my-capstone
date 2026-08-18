@@ -17,6 +17,7 @@ export default defineConfig([
       globals: {
         ...globals.browser,
         ...globals.node,
+        ...globals.vitest,
       },
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
