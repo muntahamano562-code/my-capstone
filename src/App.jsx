@@ -5,7 +5,7 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 function App() {
   return (
-    <>
+    <main>
       <section id="ai-career-assistant">
         <ErrorBoundary>
           <AIChat />
@@ -15,7 +15,7 @@ function App() {
       <section id="profile-settings">
         <ProfileSettingsForm />
       </section>
-    </>
+    </main>
   )
 }
 
