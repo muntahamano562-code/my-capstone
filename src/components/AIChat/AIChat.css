@@ -28,7 +28,7 @@
 
 .ai-chat-summary {
   margin-top: 0.9rem;
-  color: var(--text, #6b6375);
+  color: var(--text,#D1D5DB);
   max-width: 680px;
   line-height: 1.55;
 }
