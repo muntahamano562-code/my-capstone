@@ -22,7 +22,7 @@ Key product behaviors:
 
 ## Live Demo
 
-Production URL: [add final Vercel URL after deployment]
+Production URL: https://my-capstone-seven.vercel.app
 
 > The app currently runs in **mock mode** on the public URL unless a real
 > `GOOGLE_GENERATIVE_AI_API_KEY` is configured in the Vercel project. Mock mode
@@ -198,14 +198,23 @@ suggestions were **not** treated as automatically correct:
 
 ## Testing / Verification
 
-Automated checks run in CI and locally:
+Automated verification:
+- npm run lint
+- npm run build
+- npm run test:run
+- API validation/rate-limit sanity checks
 
-```bash
-npm run lint
-npm run build
-npm run test:run      # Vitest unit tests
-npx playwright test   # end-to-end (requires `npx playwright install chromium`)
-```
+Manual verification:
+- Production deployment verified on Vercel
+- Main chat flow verified
+- GitHub analysis flow verified
+- Error state verified
+
+Cross-browser verification:
+- Chrome: verified
+- Firefox: pending
+- Safari: pending
+- Mobile Safari: pending
 
 **Verified automatically (this milestone):** `npm run lint`, `npm run build`,
 and `npm run test:run` were executed; the chat handler changes preserve the
