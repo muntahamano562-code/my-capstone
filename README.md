@@ -34,13 +34,13 @@ Screenshots are not yet committed to the repository. Add real captures to
 `docs/screenshots/` and update the paths below.
 
 ### Main Experience
-![Main chat experience](docs/screenshots/main.png)
+![Main chat experience](docs/main.png)
 
 ### GitHub Analysis Tool Result
-![GitHub analysis result](docs/screenshots/github-analysis.png)
+![GitHub analysis result](docs/github-analysis.png)
 
 ### Error / Rate-limit State
-![Error state](docs/screenshots/error-state.png)
+![Error state](docs/error-state.png)
 
 **TODO (manual):** Capture and add the three screenshots above to `docs/screenshots/`.
 
@@ -258,3 +258,4 @@ Deploy to Vercel:
 
 No rewrites or extra routes are required; the existing frontend already calls
 `/api/chat` and Vite's dev proxy points to the local Express server.
+ 
